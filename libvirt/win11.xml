@@ -35,7 +35,6 @@
     <type arch='x86_64' machine='pc-q35-11.0'>hvm</type>
     <loader readonly='yes' type='pflash' format='raw'>/opt/AutoVirt/firmware/OVMF_CODE.fd</loader>
     <nvram template='/opt/AutoVirt/firmware/OVMF_VARS.fd' templateFormat='raw' format='raw'>/var/lib/libvirt/qemu/nvram/win11_VARS.fd</nvram>
-    <boot dev='cdrom'/>
     <boot dev='hd'/>
     <bootmenu enable='yes' timeout='30000'/>
   </os>
@@ -99,8 +98,6 @@
     </disk>
     <disk type='file' device='cdrom'>
       <driver name='qemu' type='raw'/>
-      <source file='/home/shiroyasha/Downloads/en-us_windows_11_iot_enterprise_ltsc_2024_x64_dvd_f6b14814.iso'/>
-      <backingStore/>
       <target dev='sdc' bus='sata'/>
       <readonly/>
       <address type='drive' controller='0' bus='0' target='0' unit='2'/>
