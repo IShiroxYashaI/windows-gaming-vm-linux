@@ -1,0 +1,31 @@
+[Unit]
+Description=Swap in patched KVM modules (VM detection hardening)
+Documentation=file:/home/shiroyasha/vfio-acpi/build/KVM-STEALTH.md
+# The module .ko files live under /home, which is its own mount here.
+After=local-fs.target
+# Must win the race against anything that opens /dev/kvm: once a VM holds the
+# modules they cannot be unloaded, and the swap would fail (safely -- the script
+# restores the distro modules -- but you'd boot unpatched without noticing).
+# The .socket units matter as much as the .service ones: libvirtd.socket is
+# enabled here, and socket activation can start libvirtd before multi-user.target
+# is reached, which Before=libvirtd.service alone would not catch. Ordering
+# against units that don't exist is ignored by systemd, so listing both the
+# monolithic and modular daemons is harmless.
+Before=libvirtd.service libvirtd.socket libvirtd-ro.socket libvirtd-admin.socket
+Before=virtqemud.service virtqemud.socket virtqemud-ro.socket virtqemud-admin.socket
+Wants=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# 'patched' = the four safe knobs (VMAware 1/85). The two intercept knobs that
+# reach 0/85 are deliberately NOT enabled here: the guest must enumerate CPU
+# topology through the emulated CPUID path while it boots. Turn them on after
+# Windows is up with:
+#     sudo /home/shiroyasha/vfio-acpi/build/root-step10-kvm-swap.sh max-on
+ExecStart=/home/shiroyasha/vfio-acpi/build/root-step10-kvm-swap.sh patched
+# On failure the swap script already restores the distro modules itself.
+ExecStopPost=-/home/shiroyasha/vfio-acpi/build/root-step10-kvm-swap.sh restore
+
+[Install]
+WantedBy=multi-user.target

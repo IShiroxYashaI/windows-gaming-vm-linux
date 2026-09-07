@@ -1,0 +1,164 @@
+--- a/arch/x86/kvm/x86.c
++++ b/arch/x86/kvm/x86.c
+@@ -155,6 +155,33 @@
+ static bool __read_mostly ignore_msrs = 0;
+ module_param(ignore_msrs, bool, 0644);
+ 
++/*
++ * Raise #UD for plain KVM hypercalls instead of servicing them, matching
++ * bare metal where VMMCALL #UDs at CPL>0 with EFER.SVME clear. Xen and
++ * Hyper-V hypercalls are dispatched first and are unaffected. Default off.
++ */
++static bool __read_mostly stealth_hypercall_ud = false;
++module_param(stealth_hypercall_ud, bool, 0644);
++
++/*
++ * Force the KVM_X86_QUIRK_FIX_HYPERCALL_INSN-disabled behaviour unconditionally:
++ * never rewrite a mismatched hypercall instruction in guest memory, synthesize
++ * #UD instead. The rewrite targets the guest's own code page via
++ * emulator_write_emulated(); when that page is read-only the write faults and
++ * the guest observes a #PF where bare metal raises #UD. This takes the same
++ * path the quirk-disabled case already uses upstream. Default off.
++ */
++static bool __read_mostly stealth_no_hypercall_patch = false;
++module_param(stealth_no_hypercall_patch, bool, 0644);
++
++/*
++ * Raise #UD instead of #GP when VMCALL is executed at CPL > 0, matching bare
++ * metal where 0F 01 C1 is an invalid opcode on AMD. Consulted directly by the
++ * instruction emulator, hence not static. Default off.
++ */
++bool __read_mostly stealth_vmcall_ud = false;
++module_param(stealth_vmcall_ud, bool, 0644);
++
+ bool __read_mostly report_ignored_msrs = true;
+ module_param(report_ignored_msrs, bool, 0644);
+ EXPORT_SYMBOL_FOR_KVM_INTERNAL(report_ignored_msrs);
+@@ -10509,6 +10536,11 @@
+ 	if (kvm_hv_hypercall_enabled(vcpu))
+ 		return kvm_hv_hypercall(vcpu);
+ 
++	if (stealth_hypercall_ud) {
++		kvm_queue_exception(vcpu, UD_VECTOR);
++		return 1;
++	}
++
+ 	return __kvm_emulate_hypercall(vcpu, kvm_x86_call(get_cpl)(vcpu),
+ 				       complete_hypercall_exit);
+ }
+@@ -10524,7 +10556,8 @@
+ 	 * If the quirk is disabled, synthesize a #UD and let the guest pick up
+ 	 * the pieces.
+ 	 */
+-	if (!kvm_check_has_quirk(vcpu->kvm, KVM_X86_QUIRK_FIX_HYPERCALL_INSN)) {
++	if (stealth_no_hypercall_patch ||
++	    !kvm_check_has_quirk(vcpu->kvm, KVM_X86_QUIRK_FIX_HYPERCALL_INSN)) {
+ 		ctxt->exception.error_code_valid = false;
+ 		ctxt->exception.vector = UD_VECTOR;
+ 		ctxt->have_exception = true;
+--- a/arch/x86/kvm/emulate.c
++++ b/arch/x86/kvm/emulate.c
+@@ -3430,6 +3430,9 @@
+ 	return X86EMUL_CONTINUE;
+ }
+ 
++/* See stealth_vmcall_ud in x86.c: #UD rather than #GP for VMCALL at CPL > 0. */
++extern bool stealth_vmcall_ud;
++
+ static int em_hypercall(struct x86_emulate_ctxt *ctxt)
+ {
+ 	int rc = ctxt->ops->fix_hypercall(ctxt);
+@@ -5344,7 +5347,8 @@
+ 
+ 		/* Privileged instruction can be executed only in CPL=0 */
+ 		if ((ctxt->d & Priv) && ops->cpl(ctxt)) {
+-			if (ctxt->d & PrivUD)
++			if ((ctxt->d & PrivUD) ||
++			    (stealth_vmcall_ud && ctxt->execute == em_hypercall))
+ 				rc = emulate_ud(ctxt);
+ 			else
+ 				rc = emulate_gp(ctxt, 0);
+--- a/arch/x86/kvm/svm/svm.c
++++ b/arch/x86/kvm/svm/svm.c
+@@ -117,6 +117,35 @@
+ static unsigned short __ro_after_init pause_filter_thresh = KVM_DEFAULT_PLE_GAP;
+ module_param(pause_filter_thresh, ushort, 0444);
+ 
++/*
++ * Intercept #GP while guest EFER.SVME=0 so that a hardware #GP on an SVM
++ * instruction (CPL>0, because hardware always sees the forced VMCB SVME=1)
++ * is re-routed through gp_interception() to the architectural #UD.
++ * See the FIXME in svm_recalc_instruction_intercepts(). Default off.
++ *
++ * Load-time only: the intercept is applied from svm_recalc_intercepts(),
++ * so this cannot be toggled for already-running vCPUs. Set it via the
++ * kernel command line or modprobe.d and (re)start the guest.
++ */
++static bool __ro_after_init stealth_svm_ud = false;
++module_param(stealth_svm_ud, bool, 0444);
++
++/*
++ * Stop intercepting CPUID so the guest executes it natively. Writable at
++ * runtime on purpose: leave it off across guest boot so the OS enumerates
++ * topology through the emulated path, then flip it on afterwards.
++ */
++static bool __read_mostly stealth_no_cpuid_intercept = false;
++module_param(stealth_no_cpuid_intercept, bool, 0644);
++
++/*
++ * Stop intercepting RDPRU so it retires natively instead of taking KVM's #UD.
++ * Only meaningful alongside stealth_no_cpuid_intercept, which is what lets the
++ * guest see the feature bit in the first place.
++ */
++static bool __read_mostly stealth_no_rdpru_intercept = false;
++module_param(stealth_no_rdpru_intercept, bool, 0644);
++
+ static unsigned short __ro_after_init pause_filter_count = KVM_SVM_DEFAULT_PLE_WINDOW;
+ module_param(pause_filter_count, ushort, 0444);
+ 
+@@ -1083,6 +1112,14 @@
+ 		svm_set_intercept(svm, INTERCEPT_VMSAVE);
+ 		svm_set_intercept(svm, INTERCEPT_CLGI);
+ 		svm_set_intercept(svm, INTERCEPT_STGI);
++
++		/*
++		 * Close the #GP-before-intercept window described in the FIXME
++		 * above: gp_interception() decodes the instruction and replays
++		 * it through the normal SVM exit handler, which injects #UD.
++		 */
++		if (stealth_svm_ud)
++			set_exception_intercept(svm, GP_VECTOR);
+ 	} else {
+ 		/*
+ 		 * If hardware supports Virtual VMLOAD VMSAVE then enable it
+@@ -4486,6 +4523,30 @@
+ 	struct vcpu_svm *svm = to_svm(vcpu);
+ 	unsigned enter_flags = 0;
+ 
++	/*
++	 * Unlike VMX, SVM makes CPUID interception optional, so the guest can
++	 * run it without a #VMEXIT. Skipped while in guest mode because
++	 * svm_set/clr_intercept() write vmcb01 while svm_is_intercept() reads
++	 * the active vmcb02, and the two would disagree.
++	 */
++	if (unlikely(!is_guest_mode(vcpu) &&
++		     stealth_no_cpuid_intercept ==
++		     svm_is_intercept(svm, INTERCEPT_CPUID))) {
++		if (stealth_no_cpuid_intercept)
++			svm_clr_intercept(svm, INTERCEPT_CPUID);
++		else
++			svm_set_intercept(svm, INTERCEPT_CPUID);
++	}
++
++	if (unlikely(!is_guest_mode(vcpu) &&
++		     stealth_no_rdpru_intercept ==
++		     svm_is_intercept(svm, INTERCEPT_RDPRU))) {
++		if (stealth_no_rdpru_intercept)
++			svm_clr_intercept(svm, INTERCEPT_RDPRU);
++		else
++			svm_set_intercept(svm, INTERCEPT_RDPRU);
++	}
++
+ 	if (!msr_write_intercepted(svm, MSR_IA32_SPEC_CTRL))
+ 		enter_flags |= KVM_ENTER_SAVE_SPEC_CTRL;
+ 

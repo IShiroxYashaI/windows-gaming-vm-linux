@@ -1,0 +1,26 @@
+# ---- giant upstream trees: re-fetchable, see KVM-STEALTH.md ----------------
+# cachy/       CachyOS kernel tarball + extracted tree (2.1G)
+# linux-7.2/   the WRONG tree: 7.2.0, gcc-built, CONFIG_CACHY dropped
+# smoke/       test scratch (8.1G)
+/cachy/
+/linux-7.2/
+/linux-7.2.tar.xz
+/smoke/
+
+# ---- nested git repos: they have their own history and remotes ------------
+# The QEMU files we actually patched are mirrored into qemu-patched-sources/
+# (tracked), and apply-my-qemu-changes.sh re-applies the edits from scratch.
+/AutoVirt/
+/qemu-cppc/
+
+# ---- build output ---------------------------------------------------------
+# kmod/ is valid ONLY for kernel 7.2.2-1-cachyos. Loading a stale pair after a
+# kernel update is the silent struct-offset corruption failure mode. Rebuild.
+/kmod/
+
+# ---- noise ----------------------------------------------------------------
+/tmp/
+*.log
+*.bak
+*.orig
+*~
