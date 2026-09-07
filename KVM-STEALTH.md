@@ -322,6 +322,18 @@ box; not something to do on a machine running untrusted workloads.
   the check passes — but it suggests `topoext` isn't landing as intended.
 - The QEMU `KVM_CAP_DISABLE_QUIRKS2` hunk and `QUIRKDBG` instrumentation in
   `AutoVirt/src/v11.0.3/target/i386/kvm/kvm.c` were proven to do nothing and
-  should be reverted.
+  **have been removed** from the source (backup:
+  `kvm.c.pre-quirk-revert.bak`). The running binary still contains them until
+  QEMU is rebuilt — the only symptom is two stray `error_report` lines per VM
+  start, so the rebuild is cosmetic and has not been done.
 - VMAware's stubs are `const unsigned char[]` in read-only `.text`, so they
   can't be patched in place from the guest side.
+
+---
+
+## See also
+
+[[HOST-TUNING]] — frametime, latency and maintenance work on the same VM:
+core isolation, the ananicy `Heavy_CPU` fix, IRQ affinity, huge pages, and the
+libvirt hook that resets the max-* intercept knobs on domain start. None of it
+changes the detection score; all of it changes how the VM actually feels.

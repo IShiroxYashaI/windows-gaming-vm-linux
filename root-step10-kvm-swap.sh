@@ -7,7 +7,13 @@
 #   max-off     - undo max-on; takes effect on the next VM entry
 #   restore     - back to the distro modules from /lib/modules
 #
-# Nothing is ever written to /lib/modules; a reboot always restores stock.
+# Nothing is ever written to /lib/modules.  NB: a host reboot does NOT return
+# you to stock -- kvm-stealth.service (root-step12-persist.sh) re-loads the
+# 'patched' build at boot.  It never sets the two max-* knobs, so those do
+# clear on a host reboot.  They do NOT clear on a guest restart: they are host
+# module parameters.  The libvirt hook from root-step13-vm-tuning.sh resets
+# them on domain start; an in-guest Windows restart bypasses that, so run
+# 'max-off' yourself before restarting Windows from inside the guest.
 # NB: insmod does not resolve dependencies, and `modprobe -r` drops now-unused
 # ones, so ccp/irqbypass are re-loaded explicitly before our modules go in.
 set -uo pipefail

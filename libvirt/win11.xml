@@ -82,7 +82,7 @@
     <emulator>/opt/AutoVirt/emulator/bin/qemu-system-x86_64</emulator>
     <disk type='block' device='disk'>
       <driver name='qemu' type='raw' cache='none' io='native' discard='unmap'/>
-      <source dev='/dev/sda'/>
+      <source dev='/dev/disk/by-id/ata-WDC_WDS240G2G0A-00JH30_20161A805100'/>
       <backingStore/>
       <target dev='sda' bus='sata'/>
       <serial>S7DNNJ0X350716</serial>
@@ -90,7 +90,7 @@
     </disk>
     <disk type='block' device='disk'>
       <driver name='qemu' type='raw' cache='none' io='native' discard='unmap'/>
-      <source dev='/dev/sdc'/>
+      <source dev='/dev/disk/by-id/ata-SSD_256GB_XXXXXXXXXXXXX'/>
       <backingStore/>
       <target dev='sdb' bus='sata'/>
       <serial>T2K7NX9R092648</serial>

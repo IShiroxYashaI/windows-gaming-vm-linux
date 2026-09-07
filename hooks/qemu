@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# libvirt qemu hook -- win11 VFIO tuning
+#
+# Installed to /etc/libvirt/hooks/qemu by root-step13-vm-tuning.sh.
+#
+# libvirt calls this as:  qemu <guest> <operation> <sub-operation> <extra>
+# A NON-ZERO EXIT FROM 'prepare' ABORTS THE DOMAIN START, so this script must
+# never fail: no `set -e`, every write guarded, unconditional `exit 0`.
+#
+# What it does, and why:
+#   prepare/begin  reset the two CPUID/RDPRU intercept knobs to 0, so Windows
+#                  always enumerates topology through the emulated CPUID path.
+#                  They are HOST module parameters and survive a guest restart;
+#                  without this a cold start after `max-on` would show the guest
+#                  raw 24C/48T host topology.
+#   started/begin  confine the host slices off the pinned vCPU cores. QEMU is in
+#                  machine.slice, so it is unaffected by this.
+#   release/end    give the cores back and reset the knobs again.
+#
+# LIMITATION: <on_reboot>restart</on_reboot> means a restart from inside Windows
+# resets QEMU in place -- libvirt fires NO hook, so the knobs stay as they are.
+# Run `root-step10-kvm-swap.sh max-off` before restarting Windows from the guest.
+
+GUEST=$1
+OP=$2
+SUBOP=$3
+
+[ "$GUEST" = "win11" ] || exit 0
+
+VM_CPUS="18-23,42-47"      # CCD 3 + SMT siblings -- the pinned vCPUs
+HOST_CPUS="0-17,24-41"     # everything else
+ALL_CPUS="0-47"
+SLICES="system.slice user.slice init.scope"
+LOG=/var/log/libvirt/hooks-win11.log
+
+log() { echo "$(date '+%F %T') [$OP/$SUBOP] $*" >> "$LOG" 2>/dev/null; }
+
+reset_knobs() {
+    # Clear CPUID before RDPRU, matching root-step10-kvm-swap.sh max-off: never
+    # leave a window where the guest sees the RDPRU feature bit in CPUID while
+    # the instruction itself still takes a #UD.
+    local k p done=0
+    for k in cpuid rdpru; do
+        p=/sys/module/kvm_amd/parameters/stealth_no_${k}_intercept
+        if [ -w "$p" ]; then
+            echo 0 > "$p" 2>/dev/null && done=1
+        fi
+    done
+    [ "$done" = 1 ] && log "intercept knobs reset to 0" \
+                    || log "patched kvm-amd not loaded; no knobs to reset"
+}
+
+set_cpus() {
+    local s rc=0
+    for s in $SLICES; do
+        systemctl set-property --runtime "$s" AllowedCPUs="$1" 2>/dev/null || rc=1
+    done
+    [ "$rc" = 0 ] && log "host slices -> $1" || log "WARN: some slices rejected $1"
+}
+
+case "$OP/$SUBOP" in
+    prepare/begin)
+        reset_knobs
+        ;;
+    started/begin)
+        set_cpus "$HOST_CPUS"
+        ;;
+    release/end)
+        set_cpus "$ALL_CPUS"
+        reset_knobs
+        ;;
+esac
+
+exit 0

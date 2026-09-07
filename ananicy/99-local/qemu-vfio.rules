@@ -1,0 +1,15 @@
+# Override 00-default/Tools/qemu.rules for the VFIO gaming VM.
+#
+# The stock rule tags QEMU as Heavy_CPU, which is { nice 9, ioclass best-effort,
+# ionice 7 }. Both halves hurt a passthrough VM:
+#   nice 9   -- vCPU threads lose every race against a host task at nice 0.
+#               Measured 1,264,700 involuntary switches on one vCPU in 89 min
+#               (~237/s) while Hyprland shared core 23.
+#   ionice 7 -- lowest best-effort I/O priority. The guest disks are raw SATA
+#               passthrough, so this deprioritises guest disk I/O against the
+#               host and makes the known WD Green write-stall worse.
+#
+# 99- sorts after 00-default, so these definitions win.
+# comm is truncated to 15 chars, hence both names.
+{ "name": "qemu-system-x86", "nice": 0, "ioclass": "best-effort", "ionice": 0 }
+{ "name": "qemu-system-x86_64", "nice": 0, "ioclass": "best-effort", "ionice": 0 }
