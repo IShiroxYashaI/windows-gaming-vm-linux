@@ -333,6 +333,9 @@ box; not something to do on a machine running untrusted workloads.
 
 ## See also
 
+[[VM-RUNBOOK]] — the short operational card: what to run when you restart the
+VM, after a host reboot, or after a kernel update.
+
 [[HOST-TUNING]] — frametime, latency and maintenance work on the same VM:
 core isolation, the ananicy `Heavy_CPU` fix, IRQ affinity, huge pages, and the
 libvirt hook that resets the max-* intercept knobs on domain start. None of it

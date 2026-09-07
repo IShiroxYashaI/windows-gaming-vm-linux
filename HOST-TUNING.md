@@ -6,6 +6,8 @@ VMAware score* — 0/85 is unchanged by all of it.
 
 Written 2026-09-07, after an audit of the running host.
 
+For the day-to-day commands rather than the reasoning, see [[VM-RUNBOOK]].
+
 ---
 
 ## What was actually wrong
