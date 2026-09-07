@@ -58,30 +58,50 @@ and get reapplied by the hook on the next VM start.
 ## After a kernel update
 
 **The modules must be rebuilt.** The `.ko` files in `kmod/` are valid only for
-the kernel they were built against (`7.2.2-1-cachyos`).
+the kernel they were built against — vermagic must match exactly.
 
 ```bash
-uname -r                                   # what is running now
-modinfo kmod/patched/kvm-amd.ko | grep vermagic     # what the modules expect
+uname -r                                          # what is running now
+modinfo kmod/patched/kvm-amd.ko | grep vermagic   # what the modules expect
 ```
 
-If those disagree:
+If those disagree, rebuild. **No script needs editing** — every version-dependent
+path is derived from `uname -r` by `kver.sh`:
 
 ```bash
-./kern-prep.sh                             # fetch the matching kernel source
-patch -p1 -d cachy/<new-version> < kernel-patches/kvm-stealth.mypatch
-./kern-build-kvm.sh patched
-sudo ./root-step10-kvm-swap.sh patched
+cd ~/vfio-acpi/build
+./kern-prep.sh                             # downloads + extracts the matching source
+./apply-patch.sh                           # applies kvm-stealth.mypatch (idempotent)
+./kern-build-kvm.sh patched                # refuses to finish if vermagic mismatches
+sudo ./root-step10-kvm-swap.sh patched     # → 1/85
+#   ... start the VM, wait for the Windows desktop ...
+sudo ./root-step10-kvm-swap.sh max-on      # → 0/85
 ```
 
-Until you do, `kvm-stealth.service` fails safely: `insmod` is rejected on the
-vermagic mismatch, the script's `fail_restore` loads the distro modules, and the
-VM runs normally with no stealth (back to 8/85). Nothing breaks, you just lose
-the patch.
+`kern-prep.sh` fetches the tarball from the CachyOS release matching your kernel
+if it is not already in `cachy/`, and aborts if the distro build tree for that
+kernel is missing — install the matching headers package first.
+
+**If the patch stops applying.** `apply-patch.sh` refuses rather than producing a
+half-patched tree, and tells you so. The three files it touches (`x86.c`,
+`emulate.c`, `svm/svm.c`) are active upstream, so a larger version jump can move
+the anchors. The recovery is to re-add the six knobs to the new tree — the
+`add-knob3.py` … `add-knob6.py` editors are idempotent and written for exactly
+this — then `./regen-patch.sh` to rebuild the patch against the new tarball.
+
+**Until you rebuild, nothing breaks.** `kvm-stealth.service` fails safe: `insmod`
+is rejected on the vermagic mismatch, the script's `fail_restore` loads the
+distro modules, and the VM runs normally with no stealth (back to 8/85).
 
 Never use `insmod -f`. Check afterwards that `/proc/sys/kernel/tainted` does
 **not** have bit 1 (`TAINT_FORCED_MODULE`, value 2) set — if it does, the source
 did not match and the module is not safe to run.
+
+**Not affected by a kernel update:** the ACPI/SMBIOS/OVMF/QEMU spoofing (it
+lives in `/opt/AutoVirt` and firmware), the `mitigations=off` boot entry (it
+references the unversioned `initramfs-linux-cachyos.img`), the libvirt hook and
+ananicy rule (plain files in `/etc`), and the domain XML. Only the KVM modules
+are kernel-coupled.
 
 ---
 

@@ -35,15 +35,29 @@ Only `arch/x86/kvm` is built, against CachyOS's own release tarball for the
 file is modified — booting without the systemd unit gives you stock KVM back.
 
 ```
-kern-prep.sh          extract tarball, install /proc/config.gz, olddefconfig
+kver.sh               sourced by the three below: derives every version-dependent
+                      path from uname -r, so none of them need editing after a
+                      kernel update. Override with KREL=<ver> to target another
+kern-prep.sh          fetch the matching CachyOS tarball if absent, extract,
+                      install /proc/config.gz, write localversion, olddefconfig
+apply-patch.sh        apply kvm-stealth.mypatch; idempotent, and refuses rather
+                      than half-patching if the anchors have moved
 kern-build-kvm.sh     seed Module.symvers from the distro build tree so a full
-                      vmlinux build isn't needed, then build M=arch/x86/kvm
+                      vmlinux build isn't needed, then build M=arch/x86/kvm.
+                      Fails if the result's vermagic != the running kernel
 regen-patch.sh        regenerate kernel-patches/kvm-stealth.mypatch by diffing
                       the working tree against pristine tarball files
 ```
 
 The `Module.symvers` seeding is the trick that makes this fast: without it,
 `make modules` wants a full `vmlinux`.
+
+The version derivation is worth one line of explanation: `uname -r` gives
+`7.2.2-1-cachyos`, which splits into base `7.2.2`, pkgrel `-1` and pkgname
+`-cachyos`. Those three reconstruct both the release tag `cachyos-7.2.2-1` (tarball,
+URL and extracted directory all share it) and the `vermagic` the build will
+produce. `kver.sh` checks the reconstruction equals `uname -r` before anything is
+built, so a mismatch is caught up front rather than at `insmod`.
 
 ### Why the source tree matters
 
