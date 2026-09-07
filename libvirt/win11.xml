@@ -36,7 +36,7 @@
     <loader readonly='yes' type='pflash' format='raw'>/opt/AutoVirt/firmware/OVMF_CODE.fd</loader>
     <nvram template='/opt/AutoVirt/firmware/OVMF_VARS.fd' templateFormat='raw' format='raw'>/var/lib/libvirt/qemu/nvram/win11_VARS.fd</nvram>
     <boot dev='hd'/>
-    <bootmenu enable='yes' timeout='30000'/>
+    <bootmenu enable='no'/>
   </os>
   <features>
     <acpi/>
