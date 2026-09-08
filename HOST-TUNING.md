@@ -140,24 +140,42 @@ installed. It now also documents the guest-restart behaviour of the max-* knobs.
 
 ---
 
-## Measuring whether it worked
+## Measured after the install (2026-09-08)
 
-None of this has been measured under load yet — the VM has not been started
-since the install. On the next boot:
+The hook fired on the first real VM start — `prepare` reset the knobs, `started`
+confined the slices — and ananicy applied `nice 0 / ionice 0` instead of
+`nice 9 / ionice 7`.
 
-```bash
-./check.sh                                  # reports the worst vCPU's preemption rate
-sudo tail /var/log/libvirt/hooks-win11.log  # confirms all three hook phases fired
-```
+| | before | after |
+|---|---|---|
+| worst vCPU involuntary switches | **237/s** | **73/s** |
+| typical vCPU | — | 22–67/s |
 
-The baseline to beat is **~237 involuntary switches/sec** on the worst vCPU
-(1,264,700 in 89 minutes). If the confinement is working that should fall to
-single digits, because nothing else will be runnable on those cores. `check.sh`
-warns above 10/s.
+Measured as a 60-second delta on a running guest, so Windows boot is excluded.
+A ~3.3× improvement on the worst case, and it is real — but it is **not** the
+"single digits" this document previously predicted. That prediction was wrong,
+and the reason is worth recording.
 
-Note this is the one half of the project that is still unproven. The detection
-result was measured directly; these numbers are a prediction from a measured
-cause, which is not the same thing.
+**cgroup cpusets only move userspace.** Confirmed both ways: every host
+userspace thread now reports `Cpus_allowed_list: 0-17,24-41` and genuinely
+cannot be scheduled on the VM cores, while kernel threads (`kworker`, `nv_queue`)
+still report `0-47` because `AllowedCPUs` on a slice does not constrain them.
+(Beware `ps -o psr` here — it reports the *last* CPU a thread ran on, so
+sleeping threads keep showing a VM core long after they were confined. That
+reads as a failure when it is not; check `Cpus_allowed_list` instead.)
+
+So what remains is kernel threads and interrupts, neither of which a cpuset can
+touch. Interrupts landing on 18-23,42-47, measured over 30s:
+
+| irq | rate | source | verdict |
+|---|---|---|---|
+| 188 | 636/s | `vfio-msi` for the Quadro at `42:00.0` | **legitimate** — the passthrough GPU serving the guest. Must stay |
+| 97 | 188/s | `xhci_hcd` at `4a:00.0` — the 1000 Hz Razer mice | host noise, should not be here |
+| 106, 114 | ~2/s | NVMe queues | negligible |
+
+That makes the IRQ affinity change below the main remaining lever, not a
+secondary one: roughly 190/s of pure host interrupt noise is still hitting the
+gaming cores.
 
 ---
 
@@ -171,12 +189,26 @@ Both are real and measured, neither is done.
 irqaffinity=0-17,24-41
 ```
 
+This is now the highest-value remaining change — see the measurements above.
+
 `isolcpus=managed_irq,domain,18-23,42-47` would additionally move the managed
 NVMe queues, at the cost of taking those cores out of the scheduler entirely —
 a bigger hammer, and it overlaps with what the cpuset isolation already does.
-Start with `irqaffinity` alone and re-measure. The vfio-msi vectors for the
-Quadro (irq188) *should* stay on the VM cores; `irqaffinity` does not move them,
-which is the desired outcome.
+Start with `irqaffinity` alone and re-measure.
+
+**Check irq188 afterwards.** `irqaffinity=` sets the default mask for interrupts
+allocated at boot, but the Quadro's `vfio-msi` vectors are allocated when the VM
+starts and it is not certain they escape the default. They are at 636/s and
+belong on the VM cores; if the change pushes them onto host cores, GPU
+interrupts start costing a cross-core hop. Verify with
+
+```bash
+grep -E 'vfio-msi|xhci' /proc/interrupts
+cat /proc/irq/188/smp_affinity_list
+```
+
+and pin it back with `echo 18-23,42-47 > /proc/irq/188/smp_affinity_list` if it
+moved.
 
 **2. Reserve huge pages at boot.** Runtime allocation is not realistic — after a
 few hours of uptime the host is too fragmented. Add `hugepagesz=2M hugepages=16640`
@@ -208,4 +240,4 @@ shared backing, so this does not break anything that depended on it.
 | `libvirtd` supports SIGHUP reload | **verified** |
 | installed artifacts byte-identical to the repo; previous hook backed up | **verified** 2026-09-08 |
 | `libvirtd` active after the reload; ananicy reloaded the rule | **verified** 2026-09-08 |
-| hook firing on a real domain start; post-change preemption counts | **not yet measured** — the VM has not been started since the install |
+| hook firing on a real domain start; post-change preemption counts | **measured** 2026-09-08 — see above |
