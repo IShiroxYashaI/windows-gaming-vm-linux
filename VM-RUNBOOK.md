@@ -24,7 +24,7 @@ This applies to **both** kinds of restart — a restart from inside Windows *and
 
 > If you forget, it is not fatal. Run `max-off` and restart Windows again.
 
-Once `root-step13-vm-tuning.sh install` has been run, the libvirt hook does the
+The libvirt hook (installed 2026-09-08) does the
 `max-off` half automatically — but **only** for `virsh shutdown`/`start`. The
 domain has `<on_reboot>restart</on_reboot>`, so a restart from inside Windows
 resets QEMU in place and libvirt fires no hook at all. That case is always
@@ -33,8 +33,8 @@ manual.
 | how you restart | hook installed? | what you run |
 |---|---|---|
 | from inside Windows | either | `max-off` before, `max-on` after |
+| `virsh shutdown` + `start` | yes (current state) | just `max-on` after |
 | `virsh shutdown` + `start` | no | `max-off` before, `max-on` after |
-| `virsh shutdown` + `start` | yes | just `max-on` after |
 
 ---
 

@@ -59,7 +59,9 @@ The libvirt hook closes this on the `prepare` path.
 
 ### `/etc/libvirt/hooks/qemu`
 
-Source of truth: `hooks/qemu` in this repo.
+Source of truth: `hooks/qemu` in this repo. Installed 2026-09-08; the stub
+`exit 0` hook that was there before is preserved at `qemu.pre-step13.bak`.
+`./check.sh` verifies it is present and ours.
 
 | libvirt phase | action | why |
 |---|---|---|
@@ -138,6 +140,27 @@ installed. It now also documents the guest-restart behaviour of the max-* knobs.
 
 ---
 
+## Measuring whether it worked
+
+None of this has been measured under load yet — the VM has not been started
+since the install. On the next boot:
+
+```bash
+./check.sh                                  # reports the worst vCPU's preemption rate
+sudo tail /var/log/libvirt/hooks-win11.log  # confirms all three hook phases fired
+```
+
+The baseline to beat is **~237 involuntary switches/sec** on the worst vCPU
+(1,264,700 in 89 minutes). If the confinement is working that should fall to
+single digits, because nothing else will be runnable on those cores. `check.sh`
+warns above 10/s.
+
+Note this is the one half of the project that is still unproven. The detection
+result was measured directly; these numbers are a prediction from a measured
+cause, which is not the same thing.
+
+---
+
 ## Still outstanding — these need a host reboot
 
 Both are real and measured, neither is done.
@@ -183,4 +206,6 @@ shared backing, so this does not break anything that depended on it.
 | by-id paths resolve correctly, domain redefined | **verified** |
 | `machine.slice` unaffected by slice confinement | **verified** |
 | `libvirtd` supports SIGHUP reload | **verified** |
-| hook firing on a real domain start; post-change preemption counts | **not yet run** — needs the privileged `install` |
+| installed artifacts byte-identical to the repo; previous hook backed up | **verified** 2026-09-08 |
+| `libvirtd` active after the reload; ananicy reloaded the rule | **verified** 2026-09-08 |
+| hook firing on a real domain start; post-change preemption counts | **not yet measured** — the VM has not been started since the install |

@@ -41,6 +41,10 @@ wrong.
 
 The `max-off` before a restart is not optional — see the runbook for why.
 
+The `./` forms above assume you are in this directory. The scripts also work
+from anywhere if given their full path, and `check.sh` prints its suggested
+fixes as absolute paths for exactly that reason.
+
 ---
 
 ## Scripts
