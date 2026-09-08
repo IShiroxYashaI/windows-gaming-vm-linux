@@ -119,6 +119,39 @@ check. A real NVIDIA WDDM head passes it. See [[KVM-STEALTH]] for the mechanism.
 Set up once, in the guest. It lives in the registry, so it survives reboots and
 is not affected by anything on the host.
 
+**Getting the file into the guest.** The guest is on libvirt's `default` NAT
+network, so the host is always `192.168.122.1` from inside Windows. On the host:
+
+```bash
+python -m http.server 8000 --directory edid --bind 192.168.122.1
+```
+
+`--bind` is not optional -- without it the server also listens on the LAN
+address. Ctrl-C when done. Then in Windows, browse to
+`http://192.168.122.1:8000/` and click the file, or:
+
+```
+curl.exe -o "%USERPROFILE%\Downloads\host-DP-1.bin" http://192.168.122.1:8000/host-DP-1.bin
+```
+
+(`curl.exe` with the extension -- bare `curl` in PowerShell is an alias for
+`Invoke-WebRequest` and takes different arguments.) Check it arrived whole:
+
+```
+certutil -hashfile "%USERPROFILE%\Downloads\host-DP-1.bin" SHA256
+```
+
+| file | sha256 |
+|---|---|
+| `host-DP-1.bin` | `f6d15e39ffcd7082de17c73e7325bee99f21b75378f1c74a95fbcd6686552c8f` |
+| `host-DP-2.bin` | `a4de9ec0c5d3432220d35c622182cdccd45f3093045288a83c208bfa5dcfc0a1` |
+
+A truncated or text-mangled EDID is the kind of thing NVCP rejects with an
+unhelpful error. If the download hangs instead, that is a host firewall rule on
+`virbr0` -- the default network only explicitly permits DNS and DHCP to the host.
+
+Then, in the guest:
+
 1. **NVIDIA Control Panel -> Workstation -> View System Topology**
    (this page exists only on the workstation driver -- a GeForce has no
    Workstation section at all)
