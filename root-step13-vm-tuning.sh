@@ -13,7 +13,8 @@
 # the cpuset changes are --runtime on purpose, so a bad state self-heals.
 set -uo pipefail
 MODE=${1:-status}
-SRC=/home/shiroyasha/vfio-acpi/build
+HERE=$(cd "$(dirname "$0")" && pwd)
+SRC=$HERE
 HOOK=/etc/libvirt/hooks/qemu
 ANA_DST=/etc/ananicy.d/99-local
 

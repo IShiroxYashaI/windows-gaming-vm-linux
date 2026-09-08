@@ -18,7 +18,8 @@
 # ones, so ccp/irqbypass are re-loaded explicitly before our modules go in.
 set -uo pipefail
 MODE=${1:-restore}
-K=/home/shiroyasha/vfio-acpi/build/kmod
+HERE=$(cd "$(dirname "$0")" && pwd)
+K=$HERE/kmod
 
 fail_restore() {
     echo "!! insmod failed - restoring distro modules"

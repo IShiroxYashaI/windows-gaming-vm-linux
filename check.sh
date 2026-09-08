@@ -135,6 +135,8 @@ if [ ${#FIXES[@]} -eq 0 ]; then
     echo "== everything looks right =="
 else
     echo "== to fix =="
-    printf '   %s\n' "${FIXES[@]}" | awk '!seen[$0]++'
+    # absolute paths: check.sh runs from anywhere, and a bare ./ fails if the
+    # shell is not sitting in this directory
+    printf '   %s\n' "${FIXES[@]}" | awk '!seen[$0]++' | sed "s|\./|$KBUILD_ROOT/|g"
 fi
 exit $RC

@@ -9,13 +9,19 @@
 # 'remove' (or just booting with the unit disabled) returns you to stock KVM.
 set -uo pipefail
 MODE=${1:-status}
-SRC=/home/shiroyasha/vfio-acpi/build/kvm-stealth.service
+HERE=$(cd "$(dirname "$0")" && pwd)
+SRC=$HERE/kvm-stealth.service
 DST=/etc/systemd/system/kvm-stealth.service
 
 case "$MODE" in
   install)
     [ -f "$SRC" ] || { echo "!! $SRC missing"; exit 1; }
-    install -m 0644 "$SRC" "$DST"
+    # systemd needs absolute paths, so the unit has them baked in. Rewrite them
+    # to wherever this checkout actually lives, so a restore to a different
+    # path installs a working unit instead of one pointing at the old home.
+    sed -E "s#/[^ =:]*/vfio-acpi/build#$HERE#g" "$SRC" > "$DST"
+    chmod 0644 "$DST"
+    grep -E '^(ExecStart|ExecStopPost)=' "$DST" | sed 's/^/   /' 
     systemctl daemon-reload
     systemctl enable kvm-stealth.service
     echo "== installed and enabled =="
