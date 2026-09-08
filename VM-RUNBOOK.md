@@ -108,7 +108,17 @@ are kernel-coupled.
 ## Checking state
 
 ```bash
-sudo ./root-step13-vm-tuning.sh status     # hook, ananicy, cpusets, knobs, preemption
+./check.sh          # everything, no root, prints the fix for whatever is wrong
+```
+
+That is the one to reach for. It verifies the kernel and module vermagic, which
+build is actually loaded, the taint bits, all six knobs, `kvm-stealth.service`,
+the libvirt hook, the ananicy rule, core isolation and the running VM.
+
+Narrower views, if you want them:
+
+```bash
+sudo ./root-step13-vm-tuning.sh status     # hook, ananicy, cpusets, preemption counters
 grep . /sys/module/kvm*/parameters/stealth_*        # all six knobs at a glance
 ```
 

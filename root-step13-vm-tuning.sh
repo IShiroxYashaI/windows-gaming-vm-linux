@@ -22,6 +22,19 @@ HOST_CPUS="0-17,24-41"
 ALL_CPUS="0-47"
 SLICES="system.slice user.slice init.scope"
 
+# Find the win11 QEMU pid. Matching on comm and then verifying cmdline is
+# deliberate: `pgrep -f guest=win11` also matches any shell whose command line
+# happens to contain that string, including the one running this script.
+vm_pid() {
+    local p
+    for p in $(pgrep -x qemu-system-x86 2>/dev/null) $(pgrep -x qemu-system-x86_64 2>/dev/null); do
+        if tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null | grep -q 'guest=win11'; then
+            echo "$p"; return 0
+        fi
+    done
+    return 1
+}
+
 need_root() { [ "$(id -u)" = 0 ] || { echo "!! run me with sudo"; exit 1; }; }
 
 libvirt_unit() {
@@ -111,7 +124,8 @@ apply-now)
     set_cpus "$HOST_CPUS"
     echo
     echo "   QEMU is in machine.slice and is NOT affected by the above."
-    grep -q machine.slice /proc/$(pgrep -f 'guest=win11' | head -1)/cgroup 2>/dev/null \
+    QP=$(vm_pid || true)
+    [ -n "$QP" ] && grep -q machine.slice "/proc/$QP/cgroup" 2>/dev/null \
         && echo "   confirmed: win11 QEMU still in machine.slice"
     ;;
 
@@ -163,7 +177,7 @@ status)
     grep . /sys/module/kvm_amd/parameters/stealth_no_*_intercept 2>/dev/null \
         | sed 's|.*/||; s|^|   |' || echo "   patched kvm-amd not loaded"
 
-    PID=$(pgrep -f 'guest=win11' | head -1)
+    PID=$(vm_pid || true)
     if [ -n "$PID" ]; then
         echo "== running win11 QEMU (pid $PID) =="
         echo "   nice   = $(ps -o ni= -p $PID | tr -d ' ')"
