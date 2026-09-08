@@ -123,11 +123,15 @@ is not affected by anything on the host.
 network, so the host is always `192.168.122.1` from inside Windows. On the host:
 
 ```bash
-python -m http.server 8000 --directory edid --bind 192.168.122.1
+python -m http.server 8000 --directory ~/vfio-acpi/build/edid --bind 192.168.122.1
 ```
 
-`--bind` is not optional -- without it the server also listens on the LAN
-address. Ctrl-C when done. Then in Windows, browse to
+Two things that are not optional here. `--bind`, or the server also listens on
+the LAN address. And an **absolute** `--directory`: it resolves against the
+shell's cwd, and Python does not complain about a directory that does not exist
+-- it just 404s everything, which looks like a firewall problem and is not one.
+A 404 on `/` itself means the served directory is wrong or empty; a 404 on only
+the filename means the directory is right and the name is off. Ctrl-C when done. Then in Windows, browse to
 `http://192.168.122.1:8000/` and click the file, or:
 
 ```
