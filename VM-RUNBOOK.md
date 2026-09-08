@@ -105,6 +105,67 @@ are kernel-coupled.
 
 ---
 
+## The virtual monitor (EDID override)
+
+The guest's primary display is a **monitor that does not exist**: a BenQ ZOWIE
+XL LCD synthesised by the Quadro driver from a real EDID file. No dummy plug, no
+cable, nothing physically attached to the card.
+
+It is there because VMAware's `GPU_CAPABILITIES` (weight 20) asks the **primary
+display driver** whether it has a hardware gamma ramp. A `ramfb` / Microsoft
+Basic Display primary, or an IddCx indirect display, has none and fails the
+check. A real NVIDIA WDDM head passes it. See [[KVM-STEALTH]] for the mechanism.
+
+Set up once, in the guest. It lives in the registry, so it survives reboots and
+is not affected by anything on the host.
+
+1. **NVIDIA Control Panel -> Workstation -> View System Topology**
+   (this page exists only on the workstation driver -- a GeForce has no
+   Workstation section at all)
+2. Click **EDID** next to the target connector -> **Load EDID**
+3. Choose the file, target connector `DisplayPort (1)`, connector type
+   DisplayPort -> apply
+4. In Windows, make that display the **main display**. `GetDC(nullptr)` follows
+   the primary, so an IDD display left as primary keeps the check firing no
+   matter what the Quadro is doing.
+
+**Undo:** same page, **Unload EDID**.
+
+The EDID files are in `edid/`, read off this host's own connectors:
+
+| file | monitor | modes |
+|---|---|---|
+| `edid/host-DP-1.bin` | BenQ ZOWIE XL LCD | 1920x1080 @ 60 / 100 / 120 / 144 / 240 |
+| `edid/host-DP-2.bin` | HP LA2206 | 1920x1080 @ 60 |
+
+Use the ZOWIE one -- a genuine 240 Hz panel is a more plausible thing to find on
+this box than the generic blob most dummy plugs carry. Both files are 256 bytes
+(base block + CTA extension), which the NVCP loader takes as-is; copy to `.txt`
+if its file picker filters on extension.
+
+Regenerate either of them while that monitor is plugged into the host:
+
+```bash
+cat /sys/class/drm/card1-DP-1/edid > edid/host-DP-1.bin
+```
+
+`stat` reports these as 0 bytes -- they are sysfs binary attributes. `cat` gets
+the real 256. `card1` is the host RTX 4080 SUPER; check `/sys/class/drm/` for
+which connectors are `connected` before copying.
+
+**Verified 2026-09-08.** System Topology shows `DisplayPort (1) -- Connected:
+BenQ ZOWIE XL LCD`, `EDID (File)`, `Usage Mode: WDDM`; Windows drives it at
+1920x1080 @ 239.76 Hz (which is DTD 5 of the file, so the whole mode list came
+through). DisplayPort accepted the override with **no** hotplug-detect load,
+which is not guaranteed on every driver version -- if a future driver refuses,
+that is the case a physical dummy plug still solves.
+
+One tell, for the record: NVCP shows `EDID source: File` and NvAPI can read that
+back. Nothing in VMAware looks at it, but it is the one thing this method has
+that a plug would not.
+
+---
+
 ## Checking state
 
 ```bash

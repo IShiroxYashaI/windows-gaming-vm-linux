@@ -37,6 +37,7 @@ wrong.
 | get back to 0/85 after a host reboot | `sudo ./root-step10-kvm-swap.sh max-on` (once Windows is up) |
 | rebuild after a kernel update | `./kern-prep.sh && ./apply-patch.sh && ./kern-build-kvm.sh patched` |
 | install the host tuning | `sudo ./root-step13-vm-tuning.sh install` |
+| give the guest a monitor with no monitor | load `edid/host-DP-1.bin` in NVCP -> Workstation -> View System Topology (see the runbook) |
 | undo everything | `sudo ./root-step13-vm-tuning.sh remove`, `sudo ./root-step12-persist.sh remove`, reboot |
 
 The `max-off` before a restart is not optional — see the runbook for why.
@@ -89,6 +90,11 @@ affected by a kernel update.
 
 `libvirt/win11.xml` is a reference copy of the domain definition, not something
 that gets applied automatically.
+
+`edid/` holds EDIDs read off this host's own connectors, for the Quadro EDID
+override that gives the guest a real WDDM display head with nothing plugged in.
+`host-DP-1.bin` is a BenQ ZOWIE XL LCD (1080p up to 240 Hz) -- that is the one
+to use. Clearing `GPU_CAPABILITIES` depends on it; see [VM-RUNBOOK.md](VM-RUNBOOK.md).
 
 ---
 

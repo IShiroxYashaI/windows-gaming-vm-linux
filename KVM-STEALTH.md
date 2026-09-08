@@ -16,6 +16,11 @@ cause and which are architectural.
 | `patched` (4 knobs) | 1/85 | SVM_EXCEPTIONS + KVM_INTERCEPTION cleared |
 | `patched` + `max-on` | **0/85** | TIMER cleared, INTERRUPT_SHADOW kept passing |
 
+That table is KVM only. `GPU_CAPABILITIES` (weight 20) is a guest **display**
+detection that rides alongside every row of it: with a `ramfb` or IddCx primary
+display each score above reads one higher, and no module knob changes that.
+It is cleared separately, by the EDID override -- see below.
+
 ---
 
 ## Host
@@ -240,6 +245,48 @@ Removing the exit entirely was the only way, which is what the CPUID knob does.
   `<topology cores='1' threads='12'/>` would abort TIMER before it measures.
   Rejected: Windows would treat all 12 logical CPUs as siblings of one core and
   schedule them at SMT priority, wrecking the thing this VM exists for.
+
+---
+
+## GPU_CAPABILITIES: the one that was never KVM's
+
+After `max-on` cleared TIMER one detection was still standing, and no module
+knob could ever have touched it -- it never enters the hypervisor.
+
+`gpu_capabilities()`, weight 20 (`vma/vmaware.hpp:11518`):
+
+```c
+const HDC hdc = GetDC(nullptr);
+if (!hdc) { return true; }
+const int color_caps = GetDeviceCaps(hdc, COLORMGMTCAPS);
+ReleaseDC(nullptr, hdc);
+return !(color_caps & CM_GAMMA_RAMP) || color_caps == 0;
+```
+
+`GetDC(nullptr)` is the **primary display**. So despite the name this asks "does
+the primary display driver expose a hardware gamma ramp?" -- nothing about the
+GPU, its PCI IDs, or its passthrough. Two ways to fail it in a setup like this:
+
+- `<model type='ramfb' heads='1' primary='yes'/>` in the domain: Windows binds
+  the Microsoft Basic Display Adapter, which has no gamma ramp
+- an IddCx indirect display driver (the IDD sample) left as primary: same
+  result, IddCx does not expose hardware gamma either
+
+The fix is to give Windows a real NVIDIA WDDM head and make it primary. The
+usual answer is a dummy plug. The better one on a Quadro is the workstation
+driver's own **EDID override** -- load a real monitor's EDID onto a connector
+and the driver synthesises the connection with nothing attached. Procedure and
+the EDID files: [[VM-RUNBOOK]].
+
+Keep `ramfb` in the domain as a recovery path for when the NVIDIA driver is not
+up yet, just not as `primary`.
+
+Confirmed 2026-09-08: with the EDID loaded and the synthesised display set as
+primary, `GPU_CAPABILITIES` clears and the score is **0/85**.
+
+Worth stating plainly because it cost time to see: this is a *guest display
+stack* problem wearing a GPU's name. Nothing in KVM, QEMU, the firmware or the
+ACPI tables could have moved it.
 
 ---
 
