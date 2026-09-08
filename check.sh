@@ -90,8 +90,9 @@ else warn "kvm-stealth.service" "$E -- patched KVM will not load at boot" \
 
 echo "== host tuning =="
 H=/etc/libvirt/hooks/qemu
+HOOK_OK=0
 if [ ! -f "$H" ]; then warn "libvirt hook" "not installed" "sudo ./root-step13-vm-tuning.sh install"
-elif grep -q 'win11 VFIO tuning' "$H" 2>/dev/null; then ok "libvirt hook" "installed"
+elif grep -q 'win11 VFIO tuning' "$H" 2>/dev/null; then ok "libvirt hook" "installed"; HOOK_OK=1
 else warn "libvirt hook" "present but not ours" "sudo ./root-step13-vm-tuning.sh install"; fi
 
 if [ -f /etc/ananicy.d/99-local/qemu-vfio.rules ]; then ok "ananicy override" "installed"
@@ -103,8 +104,10 @@ if [ "$ISO" = "0-17,24-41" ]; then ok "core isolation" "host slices on $ISO"
 elif [ -n "$PID" ]; then
     warn "core isolation" "system.slice on $ISO -- host shares the vCPU cores" \
          "sudo ./root-step13-vm-tuning.sh apply-now"
+elif [ "$HOOK_OK" = 1 ]; then
+    ok "core isolation" "host on $ISO; the hook applies it when the VM starts"
 else
-    warn "core isolation" "system.slice on $ISO (applied by the hook on VM start)" \
+    warn "core isolation" "system.slice on $ISO -- nothing will apply it" \
          "sudo ./root-step13-vm-tuning.sh install"
 fi
 
