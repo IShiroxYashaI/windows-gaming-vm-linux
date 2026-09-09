@@ -193,6 +193,47 @@ Green **by-id** path (never a bare `/dev/sdX`). VM off, host side.
 
 ---
 
+## The win11-lab sandbox
+
+A disposable twin of `win11` for testing / modding without risking the real
+install — the same idea as the restore image, one layer down. Built 2026-09-09
+by `build-lab.sh` (one-shot, guarded; needs `--yes-wipe-ssd`).
+
+- **`win11-lab`** boots from a qcow2 **overlay** (`/mnt/vmlab/win11-lab.qcow2`)
+  stacked on a **read-only golden** (`/mnt/vmlab/win11-golden.qcow2`, a copy of
+  the 0/85 image). All writes land in the overlay; the golden is never touched.
+- It carries the **same spoofed serial, MAC and GPU hostdevs** as `win11` plus
+  its own NVRAM, and inherits the whole host stealth stack — so it reaches the
+  same **0/85** after `max-on`, and to the guest / anticheat it *is* the same
+  machine.
+- `/mnt/vmlab` is the old 238 GB SSD (host `/dev/sdc`), wiped and repurposed, so
+  `win11` is now **single-disk** (WD Green only). The two domains **must never
+  run at once** — one GPU; the second `virsh start` just fails, safely.
+
+```bash
+virsh -c qemu:///system start win11-lab     # then: max-on   (per-boot, as always)
+/mnt/vmlab/reset-lab.sh                       # broke it? → back to 0/85 in ~1s (no sudo)
+virsh -c qemu:///system start win11          # the real machine, unchanged
+```
+
+`reset-lab.sh` destroys the domain if running, deletes the overlay and recreates
+it fresh on the golden. **To bake a new baseline** (with both VMs off): make the
+golden writable, re-image the WD Green over it, restore read-only, then rebuild
+the overlay —
+
+```bash
+chmod +w /mnt/vmlab/win11-golden.qcow2
+qemu-img convert -O qcow2 \
+  /dev/disk/by-id/ata-WDC_WDS240G2G0A-00JH30_20161A805100 /mnt/vmlab/win11-golden.qcow2
+chmod 0444 /mnt/vmlab/win11-golden.qcow2
+/mnt/vmlab/reset-lab.sh
+```
+
+The archival master image stays at
+`/mnt/backup/stealth_vfio/win11-clean-0of85-20260909.qcow2`.
+
+---
+
 ## The virtual monitor (EDID override)
 
 The guest's primary display is a **monitor that does not exist**: a BenQ ZOWIE

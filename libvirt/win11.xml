@@ -88,14 +88,6 @@
       <serial>S7DNNJ0X350716</serial>
       <address type='drive' controller='0' bus='0' target='0' unit='0'/>
     </disk>
-    <disk type='block' device='disk'>
-      <driver name='qemu' type='raw' cache='none' io='native' discard='unmap'/>
-      <source dev='/dev/disk/by-id/ata-SSD_256GB_XXXXXXXXXXXXX'/>
-      <backingStore/>
-      <target dev='sdb' bus='sata'/>
-      <serial>T2K7NX9R092648</serial>
-      <address type='drive' controller='0' bus='0' target='0' unit='1'/>
-    </disk>
     <disk type='file' device='cdrom'>
       <driver name='qemu' type='raw'/>
       <target dev='sdc' bus='sata'/>
