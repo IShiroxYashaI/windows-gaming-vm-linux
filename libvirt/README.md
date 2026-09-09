@@ -13,18 +13,19 @@ Restore with:
 
     virsh -c qemu:///system define libvirt/win11.xml
 
-## Known quirk, unchanged on purpose
+## Installer domain
+
+`win11-install.xml` — the throwaway domain used for the 2026-09-09 fresh
+reinstall. Identical GPU passthrough + `ramfb`/SPICE to `win11.xml`, but with the
+LTSC ISO wired to the cdrom and `cdrom` first in the boot order:
 
     <boot dev='cdrom'/>
     <boot dev='hd'/>
-    <bootmenu enable='yes' timeout='30000'/>
 
-CD-ROM is first in the boot order and the Win11 LTSC install ISO is still
-attached as `sdc`, so any keypress at the 30-second boot menu lands you in
-Windows Setup (the guest shows up as `minint-*` in the libvirt DHCP log rather
-than `DESKTOP-*`). To stop that:
+WinPE renders on the SPICE primary, not the Quadro. Full step-by-step (wipe,
+varstore reset, disk-letter map, driver) is in `../VM-RUNBOOK.md` →
+"Reinstalling Windows from scratch". `win11-vbs-20260909.xml` is a VBS-enabled
+variant kept for reference.
 
-    virsh -c qemu:///system change-media win11 sdc --eject --config
-
-Left as-is because it is the user's call, not a detection issue — VMAware does
-not inspect optical drive strings.
+The persistent `win11.xml` boots `hd`-only with no ISO attached, so it comes up
+straight into Windows with nothing to catch at boot.

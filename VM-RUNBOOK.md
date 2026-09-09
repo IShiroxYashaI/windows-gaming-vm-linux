@@ -105,6 +105,94 @@ are kernel-coupled.
 
 ---
 
+## Reinstalling Windows from scratch
+
+Rarely needed. Done 2026-09-09 (fresh IoT Enterprise LTSC 2024) and reached
+**0/85** again. There is a clean restore-point image, so a reinstall is usually
+avoidable — see the last subsection.
+
+**1. Wipe the guest disks and reset firmware.** Both are host block devices
+passed straight through, so this is on the *host*, VM off:
+
+```bash
+sudo wipefs -a /dev/sda /dev/sdc                 # WD Green + the 238 GB SSD
+sudo rm -f /var/lib/libvirt/qemu/nvram/win11_VARS.fd \
+           /var/lib/libvirt/qemu/nvram/win11_VBS_VARS.fd
+```
+
+Removing the varstores makes libvirt re-seed a clean OVMF varstore from the
+AutoVirt template on the next start — no stale "Windows Boot Manager" entry, no
+leftover Red Hat certs. **Skipping the wipe is what caused the "stuck on the
+ASUS logo" freeze**: boot fell through `cdrom` → `hd` to the *old* install still
+on `/dev/sda`, which hung. It is not a GPU or passthrough fault.
+
+**2. Boot the install domain.** `libvirt/win11-install.xml` is the throwaway
+installer domain — same 4-function GPU passthrough and `ramfb`+SPICE as the real
+one, but with the ISO wired to the cdrom and `cdrom` first in the boot order:
+
+```bash
+virsh -c qemu:///system define libvirt/win11-install.xml
+virsh -c qemu:///system start  win11-install
+```
+
+Catch the **"Press any key to boot from CD or DVD"** prompt (~5 s) or it falls
+through to `hd`.
+
+**3. Watch it over SPICE, not the Quadro.** WinPE / Windows Setup renders on the
+`ramfb` **primary**, not the passed-through card — the physical monitor on the
+Quadro only ever shows the OVMF ASUS splash (the card has no driver yet and is
+not primary). The port is `autoport`, so ask libvirt for it:
+
+```bash
+virsh -c qemu:///system domdisplay win11-install     # e.g. spice://127.0.0.1:5900
+spicy -h 127.0.0.1 -p 5900 &                          # spice-gtk; virt-viewer/remote-viewer are NOT installed
+```
+
+**4. Pick the right disk.** Guest drive letters are **not** the host's:
+
+| in the guest | host device | what it is |
+|---|---|---|
+| `sda` | `/dev/sda` | WD Green (WDS240G2G0A) — **install Windows here** |
+| `sdb` | `/dev/sdc` | the 238 GB SSD |
+| `sdc` | — | the optical drive (the ISO) |
+
+Windows landed on guest `sda` = the WD Green; that is what the backup image is a
+clone of.
+
+**5. Switch to the real (stealth) domain and add the driver.** After setup
+finishes and you have a desktop:
+
+```bash
+virsh -c qemu:///system shutdown win11-install
+virsh -c qemu:///system define   libvirt/win11.xml    # hd-only boot, no ISO
+virsh -c qemu:///system start    win11
+```
+
+Until a driver is installed the Quadro shows in Device Manager under **Other
+devices → 3D Video Controller** (yellow ⚠), *not* under Display adapters, and
+enumeration can lag — a rescan or a reboot makes it appear. Install the **NVIDIA
+RTX Enterprise / Production Branch** driver (the workstation driver), **not
+GeForce** — only it has the EDID Management feature the headless
+`GPU_CAPABILITIES` fix needs (see the next section).
+
+**6. Re-stealth.** Once Windows is fully settled:
+
+```bash
+sudo ./root-step10-kvm-swap.sh max-on      # → 0/85
+```
+
+If a physical monitor is plugged into the Quadro, its real EDID + WDDM head
+clears `GPU_CAPABILITIES` on its own and the EDID-file override below is not
+needed — keep it only for headless / Looking-Glass runs.
+
+**Faster than reinstalling: restore the clean image.**
+`/mnt/backup/stealth_vfio/win11-clean-0of85-20260909.qcow2` is a bootable clone
+of the WD Green at 0/85. Restore procedure + checksum are in that folder's
+`RESTORE-win11.md`; the one-liner is `qemu-img convert -O raw` back to the WD
+Green **by-id** path (never a bare `/dev/sdX`). VM off, host side.
+
+---
+
 ## The virtual monitor (EDID override)
 
 The guest's primary display is a **monitor that does not exist**: a BenQ ZOWIE
