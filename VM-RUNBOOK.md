@@ -232,6 +232,19 @@ chmod 0444 /mnt/vmlab/win11-golden.qcow2
 The archival master image stays at
 `/mnt/backup/stealth_vfio/win11-clean-0of85-20260909.qcow2`.
 
+**Gotcha — never carry `<backingStore/>` onto a qcow2 overlay.** `win11.xml` has an
+empty `<backingStore/>` (correct there: the raw block disk genuinely has no backing).
+Copied onto the lab's qcow2 overlay it tells libvirt "the chain ends here, no backing,"
+so QEMU opens the overlay **standalone** — the running cmdline shows
+`{"driver":"qcow2",…,"backing":null}` with no blockdev node for the golden — and the
+guest boots a blank 224 GiB disk (no GPT/ESP), OVMF finds nothing bootable, "Boot From
+File" is empty. The image is fine; it was never attached. Fix: **omit `<backingStore/>`**
+and let libvirt auto-detect the chain (then `libvirt-2-format` reads
+`"backing":"libvirt-3-format"`, the golden). As belt-and-suspenders, `fix-lab-boot.sh`
+also copies `bootmgfw.efi` to the UEFI fallback path `\EFI\BOOT\BOOTX64.EFI` in the
+golden's ESP, so the plain "UEFI &lt;disk&gt;" entry boots Windows without depending on
+any NVRAM boot entry.
+
 ---
 
 ## The virtual monitor (EDID override)
