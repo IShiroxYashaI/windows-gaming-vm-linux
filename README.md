@@ -105,6 +105,12 @@ to use. Clearing `GPU_CAPABILITIES` depends on it; see [VM-RUNBOOK.md](VM-RUNBOO
 actually edited are mirrored in `qemu-patched-sources/`), `smoke/` (test
 scratch), `kmod/` (built modules), and `*.log` / `*.bak`.
 
+**Hardware identifiers are placeholders.** The disk serials, domain UUIDs and
+MAC in `libvirt/*.xml`, the monitor serials inside `edid/*.bin` and the SSD
+serial in `build-lab.sh` are made up. The originals live in the untracked
+`private/`; substitute your own before defining a domain or running
+`build-lab.sh` (which refuses to wipe anything until `SSD_BYID` names a real disk).
+
 **`kmod/` is excluded on purpose.** The modules are valid only for the kernel
 they were built against; loading a stale pair after an update is the silent
 struct-offset corruption failure mode. `check.sh` verifies this every run.

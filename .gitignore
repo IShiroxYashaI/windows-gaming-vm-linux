@@ -30,3 +30,8 @@
 # throwaway domain variants, and a root-owned host-backup/. Same policy as
 # /smoke/ -- test scratch, not a deliverable.
 /vbs-20260909/
+
+# ---- real hardware identifiers --------------------------------------------
+# The tracked edid/, libvirt/ and build-lab.sh carry made-up serials, UUIDs
+# and MACs. private/ holds the originals with this host's real values.
+/private/
