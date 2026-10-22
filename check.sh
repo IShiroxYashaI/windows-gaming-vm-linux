@@ -82,11 +82,25 @@ case "$C$R" in
 esac
 
 echo "== persistence =="
-E=$(systemctl is-enabled kvm-stealth.service 2>/dev/null || echo missing)
-A=$(systemctl is-active  kvm-stealth.service 2>/dev/null || echo inactive)
-if [ "$E" = enabled ]; then ok "kvm-stealth.service" "$E, $A"
-else warn "kvm-stealth.service" "$E -- patched KVM will not load at boot" \
-          "sudo ./root-step12-persist.sh install"; fi
+# Both commands print the state AND exit non-zero for anything but
+# enabled/active, so an `|| echo fallback` would append a second line
+# ("failed\ninactive"). Fall back only when nothing was printed.
+E=$(systemctl is-enabled kvm-stealth.service 2>/dev/null) || true; [ -n "$E" ] || E=missing
+A=$(systemctl is-active  kvm-stealth.service 2>/dev/null) || true; [ -n "$A" ] || A=inactive
+if [ "$E" != enabled ]; then
+    warn "kvm-stealth.service" "$E -- patched KVM will not load at boot" \
+         "sudo ./root-step12-persist.sh install"
+elif [ "$A" = active ]; then
+    ok "kvm-stealth.service" "enabled, active"
+elif [ "$LOADED" = "$BUILT" ]; then
+    # The usual aftermath of a kernel update: the boot-time swap hit the stale
+    # modules and fell back to distro KVM, then the rebuild was loaded by hand.
+    # Nothing to do -- the built-modules check above covers the next boot.
+    ok "kvm-stealth.service" "enabled; $A this boot, patched build loaded by hand since"
+else
+    warn "kvm-stealth.service" "enabled, $A -- the boot-time swap did not load the patched build" \
+         "journalctl -b -u kvm-stealth.service"
+fi
 
 echo "== host tuning =="
 H=/etc/libvirt/hooks/qemu
@@ -120,16 +134,42 @@ else
     IO=$(ionice -p "$PID" 2>/dev/null)
     if [ "$N" = 0 ]; then ok "qemu priority" "nice $N, $IO"
     else warn "qemu priority" "nice $N, $IO" "sudo ./root-step13-vm-tuning.sh install"; fi
-    WORST=$(for t in /proc/$PID/task/*; do
-              case "$(cat "$t/comm" 2>/dev/null)" in CPU*KVM*)
-                grep -m1 nr_involuntary_switches "$t/sched" 2>/dev/null | tr -d ' ' | cut -d: -f2;;
-              esac; done | sort -rn | head -1)
+    # Sampled over a short window, not averaged since VM start: the cumulative
+    # counter includes Windows booting, which dominates for the first several
+    # minutes and makes a healthy VM read as heavily preempted. This is the
+    # same method as the HOST-TUNING.md baseline (237/s before, 73/s after,
+    # measured 2026-09-08 on a guest in use), so the numbers are comparable.
+    # SAMPLE=<seconds> ./check.sh to change the window.
+    SAMPLE=${SAMPLE:-10}
+    vcpu_switches() {
+        local t
+        for t in /proc/$PID/task/*; do
+            case "$(cat "$t/comm" 2>/dev/null)" in CPU*KVM*)
+                printf '%s %s\n' "${t##*/}" \
+                    "$(grep -m1 nr_involuntary_switches "$t/sched" 2>/dev/null | tr -d ' ' | cut -d: -f2)";;
+            esac
+        done
+    }
     UP=$(ps -o etimes= -p "$PID" | tr -d ' ')
-    if [ -n "$WORST" ] && [ "$UP" -gt 60 ]; then
-        RATE=$(( WORST / UP ))
-        if [ "$RATE" -lt 10 ]; then ok "vcpu preemption" "worst ${RATE}/s"
-        else warn "vcpu preemption" "worst ${RATE}/s across ${UP}s" \
-                  "sudo ./root-step13-vm-tuning.sh apply-now"; fi
+    if [ "$UP" -lt 60 ]; then
+        ok "vcpu preemption" "skipped -- VM up ${UP}s, Windows still booting"
+    else
+        S0=$(vcpu_switches); sleep "$SAMPLE"; S1=$(vcpu_switches)
+        RATE=$(awk -v s="$SAMPLE" 'NR==FNR {a[$1]=$2; next}
+                   ($1 in a) {r=($2-a[$1])/s; if (r>m) m=r} END {printf "%d", m}' \
+                   <(printf '%s\n' "$S0") <(printf '%s\n' "$S1"))
+        if [ "$RATE" -lt 10 ]; then
+            ok "vcpu preemption" "worst ${RATE}/s over ${SAMPLE}s (baseline 73/s)"
+        elif [ "$ISO" = "0-17,24-41" ]; then
+            # Host userspace is already off the vCPU cores, so apply-now would
+            # change nothing. What is left is IRQs and kernel threads, which a
+            # cpuset cannot move -- see HOST-TUNING.md, "Still outstanding".
+            warn "vcpu preemption" "worst ${RATE}/s over ${SAMPLE}s (baseline 73/s) -- host IRQs/kthreads" \
+                 "add irqaffinity=0-17,24-41 to the boot entry (HOST-TUNING.md, Still outstanding)"
+        else
+            warn "vcpu preemption" "worst ${RATE}/s over ${SAMPLE}s (baseline 73/s)" \
+                 "sudo ./root-step13-vm-tuning.sh apply-now"
+        fi
     fi
 fi
 
